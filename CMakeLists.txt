@@ -35,3 +35,32 @@ if(MINIDB_ENABLE_SANITIZERS)
         -fsanitize=address,undefined)
 endif()
 
+add_library(minidb_core
+    src/common/serialization.cpp
+    src/common/value.cpp)
+
+target_include_directories(minidb_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(minidb_core PUBLIC minidb_warnings minidb_sanitizers)
+
+if(MINIDB_BUILD_TESTS)
+    find_package(GTest REQUIRED)
+    enable_testing()
+    include(GoogleTest)
+
+    # Each test file becomes its own CTest target so a failure names the
+    # component that broke.
+    set(MINIDB_TEST_SOURCES
+        tests/serialization_test.cpp)
+
+    foreach(test_source IN LISTS MINIDB_TEST_SOURCES)
+        get_filename_component(test_name ${test_source} NAME_WE)
+        add_executable(${test_name} ${test_source})
+        target_include_directories(${test_name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests)
+        target_link_libraries(${test_name} PRIVATE minidb_core GTest::gtest_main)
+        # PRE_TEST enumerates the cases when ctest runs rather than at build
+        # time. The default POST_BUILD mode races with parallel builds and can
+        # silently register a stale, partial list of tests, which would hide
+        # failures.
+        gtest_discover_tests(${test_name} DISCOVERY_MODE PRE_TEST)
+    endforeach()
+endif()
