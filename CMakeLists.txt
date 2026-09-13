@@ -37,7 +37,8 @@ endif()
 
 add_library(minidb_core
     src/common/serialization.cpp
-    src/common/value.cpp)
+    src/common/value.cpp
+    src/storage/disk_manager.cpp)
 
 target_include_directories(minidb_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(minidb_core PUBLIC minidb_warnings minidb_sanitizers)
@@ -50,7 +51,8 @@ if(MINIDB_BUILD_TESTS)
     # Each test file becomes its own CTest target so a failure names the
     # component that broke.
     set(MINIDB_TEST_SOURCES
-        tests/serialization_test.cpp)
+        tests/serialization_test.cpp
+        tests/disk_manager_test.cpp)
 
     foreach(test_source IN LISTS MINIDB_TEST_SOURCES)
         get_filename_component(test_name ${test_source} NAME_WE)
