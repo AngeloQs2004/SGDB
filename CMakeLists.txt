@@ -40,7 +40,9 @@ add_library(minidb_core
     src/common/value.cpp
     src/storage/disk_manager.cpp
     src/buffer/lru_replacer.cpp
-    src/buffer/buffer_pool_manager.cpp)
+    src/buffer/buffer_pool_manager.cpp
+    src/catalog/schema.cpp
+    src/storage/record.cpp)
 
 target_include_directories(minidb_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(minidb_core PUBLIC minidb_warnings minidb_sanitizers)
