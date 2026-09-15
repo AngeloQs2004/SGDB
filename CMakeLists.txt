@@ -43,7 +43,8 @@ add_library(minidb_core
     src/buffer/buffer_pool_manager.cpp
     src/catalog/schema.cpp
     src/storage/record.cpp
-    src/storage/table_page.cpp)
+    src/storage/table_page.cpp
+    src/catalog/catalog.cpp)
 
 target_include_directories(minidb_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(minidb_core PUBLIC minidb_warnings minidb_sanitizers)
