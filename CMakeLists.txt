@@ -45,7 +45,8 @@ add_library(minidb_core
     src/storage/record.cpp
     src/storage/table_page.cpp
     src/catalog/catalog.cpp
-    src/storage/table_heap.cpp)
+    src/storage/table_heap.cpp
+    src/index/bplus_tree.cpp)
 
 target_include_directories(minidb_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(minidb_core PUBLIC minidb_warnings minidb_sanitizers)
