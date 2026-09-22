@@ -291,8 +291,25 @@ void BPlusTree::Insert(std::int32_t key, RecordId rid) {
 void BPlusTree::InsertIntoParent(PageId left_page_id, std::int32_t separator_key,
                                  PageId right_page_id, std::vector<PageId>& ancestors) {
     if (ancestors.empty()) {
-        // TODO(commit 2): crear una nueva raiz cuando la raiz actual se divide.
-        throw StorageError("B+ Tree: crecimiento de la raiz aun no implementado");
+        const PageId new_root_id = NewNode(false, kInvalidPageId);
+        Node root;
+        root.page_id = new_root_id;
+        root.is_leaf = false;
+        root.parent_page_id = kInvalidPageId;
+        root.keys = {separator_key};
+        root.children = {left_page_id, right_page_id};
+        WriteNode(root);
+        SetParent(left_page_id, new_root_id);
+        SetParent(right_page_id, new_root_id);
+
+        Header header = ReadHeader();
+        header.root_page_id = new_root_id;
+        WriteHeader(header);
+        if (trace_ != nullptr) {
+            *trace_ << "[B+Tree] nueva raiz page=" << new_root_id << " key=" << separator_key
+                    << '\n';
+        }
+        return;
     }
 
     const PageId parent_id = ancestors.back();
@@ -314,8 +331,33 @@ void BPlusTree::InsertIntoParent(PageId left_page_id, std::int32_t separator_key
         return;
     }
 
-    // TODO(commit 2): dividir el nodo interno y propagar la clave promotora.
-    throw StorageError("B+ Tree: split de nodo interno aun no implementado");
+    // En un nodo interno la clave central sube y no se duplica en ningún hijo.
+    const std::size_t middle = parent.keys.size() / 2U;
+    const std::int32_t promote = parent.keys[middle];
+
+    Node right;
+    right.page_id = NewNode(false, parent.parent_page_id);
+    right.is_leaf = false;
+    right.parent_page_id = parent.parent_page_id;
+    right.keys.assign(parent.keys.begin() + static_cast<std::ptrdiff_t>(middle + 1U),
+                      parent.keys.end());
+    right.children.assign(parent.children.begin() + static_cast<std::ptrdiff_t>(middle + 1U),
+                          parent.children.end());
+
+    parent.keys.resize(middle);
+    parent.children.resize(middle + 1U);
+    WriteNode(parent);
+    WriteNode(right);
+    for (PageId child : right.children) {
+        SetParent(child, right.page_id);
+    }
+    IncrementSplitCount();
+
+    if (trace_ != nullptr) {
+        *trace_ << "[B+Tree] split interno page=" << parent.page_id << " -> {" << parent.page_id
+                << ", " << right.page_id << "}, promote=" << promote << '\n';
+    }
+    InsertIntoParent(parent.page_id, promote, right.page_id, ancestors);
 }
 
 void BPlusTree::BulkLoad(std::span<const std::pair<std::int32_t, RecordId>>) {
