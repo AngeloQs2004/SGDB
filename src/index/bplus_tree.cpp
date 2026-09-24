@@ -31,9 +31,6 @@ constexpr std::uint8_t kTypeBTreeHeader = 8;
 constexpr std::uint8_t kTypeBTreeInternal = 9;
 constexpr std::uint8_t kTypeBTreeLeaf = 10;
 
-// Capacidad cableada (equivale a t = 16: 2t - 1 claves). Se reemplaza en el commit 3.
-constexpr std::size_t kMaxKeys = 31;
-
 [[nodiscard]] std::span<const std::byte> ConstBytes(std::span<std::byte> bytes) {
     return {bytes.data(), bytes.size()};
 }
@@ -45,6 +42,17 @@ void Zero(std::span<std::byte> bytes) {
 }  // namespace
 
 PageId BPlusTree::Create(BufferPoolManager& pool, std::uint16_t minimum_degree) {
+    if (minimum_degree < 2) {
+        throw QueryError("B+ Tree: el grado minimo t debe ser >= 2");
+    }
+
+    // La hoja es el límite físico: 16 + 10*(2t-1) <= 4096.
+    const std::size_t logical_max = 2U * static_cast<std::size_t>(minimum_degree) - 1U;
+    const std::size_t physical_leaf_max = (kPageSize - kNodeDataOffset) / kLeafEntrySize;
+    if (logical_max > physical_leaf_max) {
+        throw QueryError("B+ Tree: el grado t no cabe en una pagina de 4096 bytes");
+    }
+
     PageId header_id = kInvalidPageId;
     PageGuard header_guard = NewGuarded(pool, header_id);
     Zero(header_guard.Data());
@@ -71,7 +79,7 @@ PageId BPlusTree::Create(BufferPoolManager& pool, std::uint16_t minimum_degree) 
 BPlusTree::BPlusTree(BufferPoolManager& pool, PageId header_page_id)
     : pool_(pool), header_page_id_(header_page_id) {
     const Header header = ReadHeader();
-    if (header.root_page_id == kInvalidPageId) {
+    if (header.root_page_id == kInvalidPageId || header.minimum_degree < 2) {
         throw StorageError("B+ Tree: cabecera invalida");
     }
 }
@@ -101,6 +109,11 @@ void BPlusTree::WriteHeader(const Header& header) {
 }
 
 PageId BPlusTree::RootPageId() const { return ReadHeader().root_page_id; }
+std::uint16_t BPlusTree::MinimumDegree() const { return ReadHeader().minimum_degree; }
+
+std::size_t BPlusTree::MaxKeys() const {
+    return 2U * static_cast<std::size_t>(MinimumDegree()) - 1U;
+}
 
 BPlusTree::Node BPlusTree::ReadNode(PageId page_id) const {
     PageGuard guard = FetchGuarded(pool_, page_id);
@@ -143,7 +156,7 @@ BPlusTree::Node BPlusTree::ReadNode(PageId page_id) const {
 }
 
 void BPlusTree::WriteNode(const Node& node) {
-    if (node.keys.size() > kMaxKeys) {
+    if (node.keys.size() > MaxKeys()) {
         throw StorageError("B+ Tree: intento de persistir un nodo sobrecargado");
     }
     if (node.is_leaf && node.record_ids.size() != node.keys.size()) {
@@ -257,7 +270,7 @@ void BPlusTree::Insert(std::int32_t key, RecordId rid) {
     ++header.entry_count;
     WriteHeader(header);
 
-    if (leaf.keys.size() <= kMaxKeys) {
+    if (leaf.keys.size() <= MaxKeys()) {
         WriteNode(leaf);
         return;
     }
@@ -325,7 +338,7 @@ void BPlusTree::InsertIntoParent(PageId left_page_id, std::int32_t separator_key
     parent.children.insert(parent.children.begin() + static_cast<std::ptrdiff_t>(child_pos + 1U),
                            right_page_id);
 
-    if (parent.keys.size() <= kMaxKeys) {
+    if (parent.keys.size() <= MaxKeys()) {
         WriteNode(parent);
         SetParent(right_page_id, parent.page_id);
         return;
