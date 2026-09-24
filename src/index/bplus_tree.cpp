@@ -373,9 +373,103 @@ void BPlusTree::InsertIntoParent(PageId left_page_id, std::int32_t separator_key
     InsertIntoParent(parent.page_id, promote, right.page_id, ancestors);
 }
 
-void BPlusTree::BulkLoad(std::span<const std::pair<std::int32_t, RecordId>>) {
-    // TODO(commit 4): construccion bottom-up.
-    throw QueryError("B+ Tree: BulkLoad aun no implementado");
+void BPlusTree::BulkLoad(std::span<const std::pair<std::int32_t, RecordId>> entries) {
+    if (entries.empty()) {
+        return;
+    }
+    for (const auto& entry : entries) {
+        if (!entry.second.IsValid()) {
+            throw QueryError("B+ Tree: no se puede indexar un RecordId invalido");
+        }
+    }
+
+    std::vector<std::pair<std::int32_t, RecordId>> sorted(entries.begin(), entries.end());
+    std::stable_sort(sorted.begin(), sorted.end(),
+                     [](const auto& a, const auto& b) { return a.first < b.first; });
+    for (std::size_t i = 1; i < sorted.size(); ++i) {
+        if (sorted[i].first == sorted[i - 1].first) {
+            throw QueryError("B+ Tree: clave duplicada " + std::to_string(sorted[i].first));
+        }
+    }
+
+    Header header = ReadHeader();
+    if (header.entry_count != 0) {
+        for (const auto& [key, rid] : sorted) {
+            if (Search(key).has_value()) {
+                throw QueryError("B+ Tree: clave duplicada " + std::to_string(key));
+            }
+        }
+        for (const auto& [key, rid] : sorted) {
+            Insert(key, rid);
+        }
+        return;
+    }
+
+    // Árbol vacío: hojas repartidas parejo (>= t claves salvo hoja única) y niveles hacia arriba.
+    const std::size_t max_keys = MaxKeys();
+    const std::size_t n = sorted.size();
+    const std::size_t leaf_count = (n + max_keys - 1U) / max_keys;
+
+    std::vector<Node> level;
+    std::vector<std::int32_t> mins;  // clave mínima del subárbol de cada nodo de `level`
+    level.reserve(leaf_count);
+    std::size_t pos = 0;
+    for (std::size_t i = 0; i < leaf_count; ++i) {
+        const std::size_t size = n / leaf_count + (i < n % leaf_count ? 1U : 0U);
+        Node leaf;
+        leaf.page_id = (i == 0) ? header.root_page_id : NewNode(true, kInvalidPageId);
+        leaf.is_leaf = true;
+        for (std::size_t j = 0; j < size; ++j, ++pos) {
+            leaf.keys.push_back(sorted[pos].first);
+            leaf.record_ids.push_back(sorted[pos].second);
+        }
+        mins.push_back(leaf.keys.front());
+        level.push_back(std::move(leaf));
+    }
+    for (std::size_t i = 0; i + 1 < level.size(); ++i) {
+        level[i].next_leaf_page_id = level[i + 1].page_id;
+    }
+
+    while (level.size() > 1) {
+        const std::size_t child_count = level.size();
+        const std::size_t parent_count = (child_count + max_keys) / (max_keys + 1U);
+        std::vector<Node> parents;
+        std::vector<std::int32_t> parent_mins;
+        std::size_t child_pos = 0;
+        for (std::size_t p = 0; p < parent_count; ++p) {
+            const std::size_t take = child_count / parent_count + (p < child_count % parent_count ? 1U : 0U);
+            Node parent;
+            parent.page_id = NewNode(false, kInvalidPageId);
+            parent.is_leaf = false;
+            parent_mins.push_back(mins[child_pos]);
+            for (std::size_t j = 0; j < take; ++j, ++child_pos) {
+                if (j > 0) {
+                    parent.keys.push_back(mins[child_pos]);
+                }
+                parent.children.push_back(level[child_pos].page_id);
+                level[child_pos].parent_page_id = parent.page_id;
+            }
+            parents.push_back(std::move(parent));
+        }
+        for (const Node& node : level) {
+            WriteNode(node);
+        }
+        if (trace_ != nullptr) {
+            *trace_ << "[B+Tree] bulk load: nivel de " << level.size() << " nodos -> "
+                    << parents.size() << " padres\n";
+        }
+        level = std::move(parents);
+        mins = std::move(parent_mins);
+    }
+    WriteNode(level.front());
+
+    header.root_page_id = level.front().page_id;
+    header.entry_count = n;
+    WriteHeader(header);
+    if (trace_ != nullptr) {
+        *trace_ << "[B+Tree] bulk load: " << n << " entradas, " << leaf_count
+                << " hojas, raiz page=" << header.root_page_id << '\n';
+    }
 }
 
 }  // namespace minidb
