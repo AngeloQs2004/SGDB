@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <ostream>
 #include <optional>
+#include <queue>
 #include <utility>
 #include <vector>
 #include <string>
@@ -320,7 +321,7 @@ void BPlusTree::InsertIntoParent(PageId left_page_id, std::int32_t separator_key
         WriteHeader(header);
         if (trace_ != nullptr) {
             *trace_ << "[B+Tree] nueva raiz page=" << new_root_id << " key=" << separator_key
-                    << '\n';
+                    << "  -> altura del arbol = " << GetStatistics().height << '\n';
         }
         return;
     }
@@ -470,6 +471,116 @@ void BPlusTree::BulkLoad(std::span<const std::pair<std::int32_t, RecordId>> entr
         *trace_ << "[B+Tree] bulk load: " << n << " entradas, " << leaf_count
                 << " hojas, raiz page=" << header.root_page_id << '\n';
     }
+}
+
+struct BPlusTree::ValidationState {
+    std::string error;
+    std::int64_t leaf_depth = -1;
+    std::uint64_t total_keys = 0;
+    std::vector<Node> leaves;  // de izquierda a derecha
+    PageId root = kInvalidPageId;
+    std::size_t min_keys = 0;
+};
+
+bool BPlusTree::ValidateNode(PageId page_id, PageId expected_parent,
+                             std::optional<std::int32_t> low, std::optional<std::int32_t> high,
+                             std::uint32_t depth, ValidationState& st) const {
+    auto fail = [&](const std::string& msg) {
+        st.error = "page " + std::to_string(page_id) + ": " + msg;
+        return false;
+    };
+    const Node node = ReadNode(page_id);
+    if (node.parent_page_id != expected_parent) {
+        return fail("puntero al padre incorrecto");
+    }
+    if (node.keys.size() > MaxKeys()) {
+        return fail("nodo con mas de 2t-1 claves");
+    }
+    if (page_id != st.root && node.keys.size() < st.min_keys) {
+        return fail("nodo (no raiz) con menos de t-1 claves");
+    }
+    for (std::size_t i = 0; i < node.keys.size(); ++i) {
+        if (i > 0 && node.keys[i - 1] >= node.keys[i]) {
+            return fail("claves no estrictamente ordenadas");
+        }
+        if ((low && node.keys[i] < *low) || (high && node.keys[i] >= *high)) {
+            return fail("clave fuera del rango definido por los separadores del padre");
+        }
+    }
+    if (node.is_leaf) {
+        if (st.leaf_depth < 0) {
+            st.leaf_depth = depth;
+        } else if (st.leaf_depth != static_cast<std::int64_t>(depth)) {
+            return fail("hojas a distinta profundidad (arbol desbalanceado)");
+        }
+        st.total_keys += node.keys.size();
+        st.leaves.push_back(node);
+        return true;
+    }
+    for (std::size_t i = 0; i < node.children.size(); ++i) {
+        const auto child_low = (i == 0) ? low : std::optional<std::int32_t>(node.keys[i - 1]);
+        const auto child_high =
+            (i == node.keys.size()) ? high : std::optional<std::int32_t>(node.keys[i]);
+        if (!ValidateNode(node.children[i], page_id, child_low, child_high, depth + 1U, st)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool BPlusTree::Validate(std::string* error) const {
+    ValidationState st;
+    const Header header = ReadHeader();
+    st.root = header.root_page_id;
+    st.min_keys = header.minimum_degree - 1U;
+    bool ok = ValidateNode(st.root, kInvalidPageId, std::nullopt, std::nullopt, 1, st);
+    if (ok) {
+        for (std::size_t i = 0; i < st.leaves.size(); ++i) {
+            const PageId expected_next =
+                (i + 1 < st.leaves.size()) ? st.leaves[i + 1].page_id : kInvalidPageId;
+            if (st.leaves[i].next_leaf_page_id != expected_next) {
+                st.error = "cadena de hojas incorrecta en page " +
+                           std::to_string(st.leaves[i].page_id);
+                ok = false;
+                break;
+            }
+        }
+    }
+    if (ok && st.total_keys != header.entry_count) {
+        st.error = "entry_count (" + std::to_string(header.entry_count) +
+                   ") no coincide con las claves en hojas (" + std::to_string(st.total_keys) + ")";
+        ok = false;
+    }
+    if (!ok && error != nullptr) {
+        *error = st.error;
+    }
+    return ok;
+}
+
+BPlusTree::Statistics BPlusTree::GetStatistics() const {
+    Statistics stats;
+    const Header header = ReadHeader();
+    stats.entry_count = header.entry_count;
+    stats.split_count = header.split_count;
+
+    std::queue<std::pair<PageId, std::uint32_t>> pending;
+    pending.push({header.root_page_id, 1});
+    while (!pending.empty()) {
+        const auto [page_id, level] = pending.front();
+        pending.pop();
+        const Node node = ReadNode(page_id);
+        ++stats.node_count;
+        stats.height = std::max(stats.height, level);
+        if (node.is_leaf) {
+            ++stats.leaf_count;
+        } else {
+            ++stats.internal_count;
+            for (PageId child : node.children) {
+                pending.push({child, level + 1U});
+            }
+        }
+    }
+    return stats;
 }
 
 }  // namespace minidb
