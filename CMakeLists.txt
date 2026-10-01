@@ -51,6 +51,14 @@ add_library(minidb_core
 target_include_directories(minidb_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(minidb_core PUBLIC minidb_warnings minidb_sanitizers)
 
+# TODO: habilitar cuando se suban los fuentes que faltan (src/database, parser,
+# execution, vector, index/hash_index y src/btree_demo.cpp); hoy solo existe
+# src/main.cpp, que depende de minidb/database/database.hpp.
+# add_executable(minidb src/main.cpp)
+# target_link_libraries(minidb PRIVATE minidb_core)
+# add_executable(btree_demo src/btree_demo.cpp)
+# target_link_libraries(btree_demo PRIVATE minidb_core)
+
 if(MINIDB_BUILD_TESTS)
     find_package(GTest REQUIRED)
     enable_testing()
@@ -63,7 +71,8 @@ if(MINIDB_BUILD_TESTS)
         tests/disk_manager_test.cpp
         tests/buffer_pool_test.cpp
         tests/table_page_test.cpp
-        tests/table_heap_test.cpp)
+        tests/table_heap_test.cpp
+        tests/bplus_tree_test.cpp)
 
     foreach(test_source IN LISTS MINIDB_TEST_SOURCES)
         get_filename_component(test_name ${test_source} NAME_WE)
