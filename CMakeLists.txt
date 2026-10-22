@@ -51,6 +51,14 @@ add_library(minidb_core
 target_include_directories(minidb_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(minidb_core PUBLIC minidb_warnings minidb_sanitizers)
 
+# El analizador lexico es independiente del motor de almacenamiento: no usa
+# minidb_core y se compila (y se prueba) por separado.
+add_library(minidb_lexer
+    src/lexer/token.cpp)
+
+target_include_directories(minidb_lexer PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(minidb_lexer PUBLIC minidb_warnings minidb_sanitizers)
+
 # TODO: habilitar cuando se suban los fuentes que faltan (src/database, parser,
 # execution, vector, index/hash_index y src/btree_demo.cpp); hoy solo existe
 # src/main.cpp, que depende de minidb/database/database.hpp.
