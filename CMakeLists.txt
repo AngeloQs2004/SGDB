@@ -54,7 +54,8 @@ target_link_libraries(minidb_core PUBLIC minidb_warnings minidb_sanitizers)
 # El analizador lexico es independiente del motor de almacenamiento: no usa
 # minidb_core y se compila (y se prueba) por separado.
 add_library(minidb_lexer
-    src/lexer/token.cpp)
+    src/lexer/token.cpp
+    src/lexer/keywords.cpp)
 
 target_include_directories(minidb_lexer PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(minidb_lexer PUBLIC minidb_warnings minidb_sanitizers)
