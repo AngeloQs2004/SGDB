@@ -84,6 +84,12 @@ if(MINIDB_BUILD_TESTS)
         tests/table_heap_test.cpp
         tests/bplus_tree_test.cpp)
 
+    # Las pruebas del analizador lexico no necesitan el motor de almacenamiento:
+    # se enlazan solo contra minidb_lexer.
+    add_executable(lexer_test tests/lexer_test.cpp)
+    target_link_libraries(lexer_test PRIVATE minidb_lexer GTest::gtest_main)
+    gtest_discover_tests(lexer_test DISCOVERY_MODE PRE_TEST)
+
     foreach(test_source IN LISTS MINIDB_TEST_SOURCES)
         get_filename_component(test_name ${test_source} NAME_WE)
         add_executable(${test_name} ${test_source})
