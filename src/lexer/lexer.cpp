@@ -11,6 +11,10 @@ bool IsWordStart(char c) {
     return std::isalpha(static_cast<unsigned char>(c)) != 0 || c == '_';
 }
 
+bool IsDigit(char c) {
+    return std::isdigit(static_cast<unsigned char>(c)) != 0;
+}
+
 bool IsWordPart(char c) {
     return std::isalnum(static_cast<unsigned char>(c)) != 0 || c == '_';
 }
@@ -61,6 +65,30 @@ Token Lexer::ScanWord() {
     return token;
 }
 
+Token Lexer::ScanNumber() {
+    const std::size_t start = pos_;
+    Token token;
+    token.line = line_;
+    token.column = column_;
+
+    while (!AtEnd() && IsDigit(Peek())) {
+        Advance();
+    }
+
+    token.type = TokenType::kIntegerLiteral;
+    token.lexeme = std::string(input_.substr(start, pos_ - start));
+    return token;
+}
+
+Token Lexer::ScanPunctuation(TokenType type) {
+    Token token;
+    token.type = type;
+    token.line = line_;
+    token.column = column_;
+    token.lexeme = std::string(1, Advance());
+    return token;
+}
+
 void Lexer::ReportUnexpectedCharacter(std::size_t line, std::size_t column) {
     const std::size_t start = pos_;
     Advance();
@@ -82,8 +110,15 @@ LexResult Lexer::Tokenize() {
             break;
         }
 
-        if (IsWordStart(Peek())) {
+        const char c = Peek();
+        if (IsWordStart(c)) {
             result_.tokens.push_back(ScanWord());
+        } else if (IsDigit(c)) {
+            result_.tokens.push_back(ScanNumber());
+        } else if (c == ',') {
+            result_.tokens.push_back(ScanPunctuation(TokenType::kComma));
+        } else if (c == ';') {
+            result_.tokens.push_back(ScanPunctuation(TokenType::kSemicolon));
         } else {
             ReportUnexpectedCharacter(line_, column_);
         }

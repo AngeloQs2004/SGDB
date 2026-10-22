@@ -46,6 +46,8 @@ private:
     void SkipWhitespace();
 
     Token ScanWord();
+    Token ScanNumber();
+    Token ScanPunctuation(TokenType type);
     void ReportUnexpectedCharacter(std::size_t line, std::size_t column);
 
     std::string_view input_;
