@@ -76,6 +76,15 @@ Token Lexer::ScanNumber() {
     }
 
     token.type = TokenType::kIntegerLiteral;
+    // Un punto solo forma parte del numero si lo sigue un digito: "3.14" es un
+    // decimal, pero en "3." el punto no se consume.
+    if (Peek() == '.' && IsDigit(PeekNext())) {
+        Advance();
+        while (!AtEnd() && IsDigit(Peek())) {
+            Advance();
+        }
+        token.type = TokenType::kDecimalLiteral;
+    }
     token.lexeme = std::string(input_.substr(start, pos_ - start));
     return token;
 }

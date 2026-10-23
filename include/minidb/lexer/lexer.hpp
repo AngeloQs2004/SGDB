@@ -42,6 +42,7 @@ public:
 private:
     [[nodiscard]] bool AtEnd() const { return pos_ >= input_.size(); }
     [[nodiscard]] char Peek() const { return AtEnd() ? '\0' : input_[pos_]; }
+    [[nodiscard]] char PeekNext() const { return pos_ + 1 < input_.size() ? input_[pos_ + 1] : '\0'; }
     char Advance();
     void SkipWhitespace();
 
