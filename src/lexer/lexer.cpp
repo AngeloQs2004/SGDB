@@ -201,6 +201,8 @@ LexResult Lexer::Tokenize() {
             result_.tokens.push_back(ScanPunctuation(TokenType::kComma));
         } else if (c == ';') {
             result_.tokens.push_back(ScanPunctuation(TokenType::kSemicolon));
+        } else if (c == '*') {
+            result_.tokens.push_back(ScanPunctuation(TokenType::kAsterisk));
         } else {
             ReportUnexpectedCharacter(line_, column_);
         }
