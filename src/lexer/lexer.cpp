@@ -115,6 +115,49 @@ void Lexer::ScanString() {
     result_.errors.push_back(LexicalError{"Cadena sin cerrar", line, column});
 }
 
+// Operadores relacionales. Se toma siempre el lexema mas largo posible: tras '<'
+// se mira el siguiente caracter para decidir entre '<', '<=' y '<>', de modo
+// que un operador compuesto nunca se parte en dos tokens.
+void Lexer::ScanOperator() {
+    const std::size_t line = line_;
+    const std::size_t column = column_;
+    const char first = Advance();
+    TokenType type = TokenType::kEqual;
+    std::string lexeme(1, first);
+
+    switch (first) {
+        case '=':
+            break;
+        case '<':
+            type = TokenType::kLess;
+            if (Peek() == '=') {
+                type = TokenType::kLessEqual;
+                lexeme += Advance();
+            } else if (Peek() == '>') {
+                type = TokenType::kNotEqual;
+                lexeme += Advance();
+            }
+            break;
+        case '>':
+            type = TokenType::kGreater;
+            if (Peek() == '=') {
+                type = TokenType::kGreaterEqual;
+                lexeme += Advance();
+            }
+            break;
+        default:  // '!'
+            if (Peek() != '=') {
+                result_.errors.push_back(
+                    LexicalError{"Caracter no admitido: '!' (solo es valido como '!=')", line, column});
+                return;
+            }
+            type = TokenType::kNotEqual;
+            lexeme += Advance();
+            break;
+    }
+    result_.tokens.push_back(Token{type, std::move(lexeme), line, column});
+}
+
 Token Lexer::ScanPunctuation(TokenType type) {
     Token token;
     token.type = type;
@@ -152,6 +195,8 @@ LexResult Lexer::Tokenize() {
             result_.tokens.push_back(ScanNumber());
         } else if (c == '\'') {
             ScanString();
+        } else if (c == '=' || c == '<' || c == '>' || c == '!') {
+            ScanOperator();
         } else if (c == ',') {
             result_.tokens.push_back(ScanPunctuation(TokenType::kComma));
         } else if (c == ';') {
