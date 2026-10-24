@@ -48,6 +48,7 @@ private:
 
     Token ScanWord();
     Token ScanNumber();
+    void ScanString();
     Token ScanPunctuation(TokenType type);
     void ReportUnexpectedCharacter(std::size_t line, std::size_t column);
 

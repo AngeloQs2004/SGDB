@@ -89,6 +89,32 @@ Token Lexer::ScanNumber() {
     return token;
 }
 
+// Cadena entre comillas simples. Dentro de ella '' representa una comilla. El
+// lexema conserva las comillas tal como estan en la entrada; quitarlas es
+// trabajo de quien interprete el literal. Puede abarcar varias lineas.
+void Lexer::ScanString() {
+    const std::size_t start = pos_;
+    const std::size_t line = line_;
+    const std::size_t column = column_;
+
+    Advance();  // comilla de apertura
+    while (!AtEnd()) {
+        if (Peek() == '\'') {
+            Advance();
+            if (Peek() != '\'') {
+                result_.tokens.push_back(Token{TokenType::kStringLiteral,
+                                               std::string(input_.substr(start, pos_ - start)),
+                                               line, column});
+                return;
+            }
+        }
+        Advance();  // contenido, o la segunda comilla de ''
+    }
+
+    // Se llego al final sin la comilla de cierre: no es un token valido.
+    result_.errors.push_back(LexicalError{"Cadena sin cerrar", line, column});
+}
+
 Token Lexer::ScanPunctuation(TokenType type) {
     Token token;
     token.type = type;
@@ -124,6 +150,8 @@ LexResult Lexer::Tokenize() {
             result_.tokens.push_back(ScanWord());
         } else if (IsDigit(c)) {
             result_.tokens.push_back(ScanNumber());
+        } else if (c == '\'') {
+            ScanString();
         } else if (c == ',') {
             result_.tokens.push_back(ScanPunctuation(TokenType::kComma));
         } else if (c == ';') {
