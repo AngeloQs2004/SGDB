@@ -47,7 +47,7 @@ private:
     void SkipWhitespace();
 
     Token ScanWord();
-    Token ScanNumber();
+    void ScanNumber();
     void ScanString();
     void ScanOperator();
     Token ScanPunctuation(TokenType type);

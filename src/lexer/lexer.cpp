@@ -65,28 +65,41 @@ Token Lexer::ScanWord() {
     return token;
 }
 
-Token Lexer::ScanNumber() {
+// Numero: digitos o digitos '.' digitos. Se lee toda la secuencia de letras,
+// digitos, '_' y '.' que empieza en un digito y despues se valida completa: asi
+// "12abc", "3." y "1.2.3" se informan como un unico numero mal formado en lugar
+// de partirse en tokens que parecerian validos.
+void Lexer::ScanNumber() {
     const std::size_t start = pos_;
-    Token token;
-    token.line = line_;
-    token.column = column_;
+    const std::size_t line = line_;
+    const std::size_t column = column_;
 
-    while (!AtEnd() && IsDigit(Peek())) {
+    while (!AtEnd() && (IsWordPart(Peek()) || Peek() == '.')) {
         Advance();
     }
+    const std::string lexeme(input_.substr(start, pos_ - start));
 
-    token.type = TokenType::kIntegerLiteral;
-    // Un punto solo forma parte del numero si lo sigue un digito: "3.14" es un
-    // decimal, pero en "3." el punto no se consume.
-    if (Peek() == '.' && IsDigit(PeekNext())) {
-        Advance();
-        while (!AtEnd() && IsDigit(Peek())) {
-            Advance();
+    const std::size_t dot = lexeme.find('.');
+    const auto all_digits = [](std::string_view text) {
+        if (text.empty()) {
+            return false;
         }
-        token.type = TokenType::kDecimalLiteral;
+        for (char c : text) {
+            if (!IsDigit(c)) {
+                return false;
+            }
+        }
+        return true;
+    };
+
+    if (dot == std::string::npos && all_digits(lexeme)) {
+        result_.tokens.push_back(Token{TokenType::kIntegerLiteral, lexeme, line, column});
+    } else if (dot != std::string::npos && all_digits(std::string_view(lexeme).substr(0, dot)) &&
+               all_digits(std::string_view(lexeme).substr(dot + 1))) {
+        result_.tokens.push_back(Token{TokenType::kDecimalLiteral, lexeme, line, column});
+    } else {
+        result_.errors.push_back(LexicalError{"Numero mal formado: '" + lexeme + "'", line, column});
     }
-    token.lexeme = std::string(input_.substr(start, pos_ - start));
-    return token;
 }
 
 // Cadena entre comillas simples. Dentro de ella '' representa una comilla. El
@@ -192,7 +205,7 @@ LexResult Lexer::Tokenize() {
         if (IsWordStart(c)) {
             result_.tokens.push_back(ScanWord());
         } else if (IsDigit(c)) {
-            result_.tokens.push_back(ScanNumber());
+            ScanNumber();
         } else if (c == '\'') {
             ScanString();
         } else if (c == '=' || c == '<' || c == '>' || c == '!') {
