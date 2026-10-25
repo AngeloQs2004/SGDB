@@ -140,6 +140,103 @@ TEST(LexerTest, EofPositionIsTheEndOfTheInput) {
     EXPECT_EQ(result.tokens.back().column, 3U);
 }
 
+// --- Literales -------------------------------------------------------------
+
+TEST(LexerTest, RecognisesDecimalLiterals) {
+    const LexResult result = Lex("3.14 0.5 100.0");
+    EXPECT_EQ(Types(result),
+              (std::vector<TokenType>{Type::kDecimalLiteral, Type::kDecimalLiteral,
+                                      Type::kDecimalLiteral, Type::kEndOfInput}));
+    EXPECT_EQ(Lexemes(result), (std::vector<std::string>{"3.14", "0.5", "100.0", ""}));
+}
+
+TEST(LexerTest, IntegerAndDecimalAreTokenisedDifferently) {
+    const LexResult result = Lex("18, 18.5");
+    EXPECT_EQ(result.tokens[0].type, Type::kIntegerLiteral);
+    EXPECT_EQ(result.tokens[2].type, Type::kDecimalLiteral);
+}
+
+TEST(LexerTest, RecognisesStringLiterals) {
+    const LexResult result = Lex("'Ana' 'Ciencia de la Computacion' ''");
+    EXPECT_TRUE(result.Ok());
+    EXPECT_EQ(Types(result),
+              (std::vector<TokenType>{Type::kStringLiteral, Type::kStringLiteral,
+                                      Type::kStringLiteral, Type::kEndOfInput}));
+    // El lexema conserva las comillas.
+    EXPECT_EQ(result.tokens[0].lexeme, "'Ana'");
+    EXPECT_EQ(result.tokens[2].lexeme, "''");
+}
+
+TEST(LexerTest, StringsMayContainKeywordsOperatorsAndSpaces) {
+    const LexResult result = Lex("'SELECT >= 5, x;'");
+    ASSERT_EQ(result.tokens.size(), 2U);
+    EXPECT_EQ(result.tokens[0].type, Type::kStringLiteral);
+    EXPECT_EQ(result.tokens[0].lexeme, "'SELECT >= 5, x;'");
+}
+
+TEST(LexerTest, DoubledQuoteInsideAStringIsAnEscapedQuote) {
+    const LexResult result = Lex("'it''s' x");
+    EXPECT_TRUE(result.Ok());
+    EXPECT_EQ(result.tokens[0].lexeme, "'it''s'");
+    EXPECT_EQ(result.tokens[1].lexeme, "x");
+}
+
+TEST(LexerTest, StringCanSpanSeveralLinesAndKeepsPositionsAfterIt) {
+    const LexResult result = Lex("'a\nb' x");
+    EXPECT_TRUE(result.Ok());
+    EXPECT_EQ(result.tokens[0].line, 1U);
+    EXPECT_EQ(result.tokens[1].line, 2U);
+    EXPECT_EQ(result.tokens[1].column, 4U);
+}
+
+// --- Operadores relacionales -----------------------------------------------
+
+TEST(LexerTest, RecognisesEveryRelationalOperator) {
+    const LexResult result = Lex("= <> != < > <= >=");
+    EXPECT_TRUE(result.Ok());
+    EXPECT_EQ(Types(result),
+              (std::vector<TokenType>{Type::kEqual, Type::kNotEqual, Type::kNotEqual, Type::kLess,
+                                      Type::kGreater, Type::kLessEqual, Type::kGreaterEqual,
+                                      Type::kEndOfInput}));
+    EXPECT_EQ(Lexemes(result),
+              (std::vector<std::string>{"=", "<>", "!=", "<", ">", "<=", ">=", ""}));
+}
+
+TEST(LexerTest, TwoCharacterOperatorsAreSingleTokens) {
+    for (const char* op : {">=", "<=", "<>", "!="}) {
+        const LexResult result = Lex(std::string("a ") + op + " b");
+        ASSERT_EQ(result.tokens.size(), 4U) << op;
+        EXPECT_EQ(result.tokens[1].lexeme, op);
+    }
+}
+
+TEST(LexerTest, SplitOperatorIsTwoTokens) {
+    // Con un espacio en medio ya no es un operador compuesto.
+    const LexResult result = Lex("> =");
+    EXPECT_EQ(Types(result), (std::vector<TokenType>{Type::kGreater, Type::kEqual,
+                                                     Type::kEndOfInput}));
+}
+
+TEST(LexerTest, OperatorsNeedNoSurroundingSpaces) {
+    const LexResult result = Lex("edad>=18");
+    EXPECT_EQ(Types(result),
+              (std::vector<TokenType>{Type::kIdentifier, Type::kGreaterEqual,
+                                      Type::kIntegerLiteral, Type::kEndOfInput}));
+}
+
+TEST(LexerTest, ConsecutiveOperatorsAreNotMerged) {
+    const LexResult result = Lex(">=<=!=");
+    EXPECT_EQ(Types(result), (std::vector<TokenType>{Type::kGreaterEqual, Type::kLessEqual,
+                                                     Type::kNotEqual, Type::kEndOfInput}));
+}
+
+TEST(LexerTest, AsteriskIsATokenOfItsOwn) {
+    const LexResult result = Lex("SELECT * FROM t");
+    EXPECT_EQ(Types(result),
+              (std::vector<TokenType>{Type::kKeywordSelect, Type::kAsterisk, Type::kKeywordFrom,
+                                      Type::kIdentifier, Type::kEndOfInput}));
+}
+
 // --- Entrada vacia y errores basicos ---------------------------------------
 
 TEST(LexerTest, EmptyInputProducesOnlyEof) {
