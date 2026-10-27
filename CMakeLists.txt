@@ -61,6 +61,10 @@ add_library(minidb_lexer
 target_include_directories(minidb_lexer PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(minidb_lexer PUBLIC minidb_warnings minidb_sanitizers)
 
+# Programa de linea de comandos: sql_lexer [archivo | -e "sentencia"]
+add_executable(sql_lexer src/lexer/sql_lexer_main.cpp)
+target_link_libraries(sql_lexer PRIVATE minidb_lexer)
+
 # TODO: habilitar cuando se suban los fuentes que faltan (src/database, parser,
 # execution, vector, index/hash_index y src/btree_demo.cpp); hoy solo existe
 # src/main.cpp, que depende de minidb/database/database.hpp.
