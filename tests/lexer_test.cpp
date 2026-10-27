@@ -278,5 +278,66 @@ TEST(LexerTest, NonAsciiCharacterCountsAsOneColumnAndOneError) {
     EXPECT_EQ(result.tokens[1].column, 5U);
 }
 
+// --- Errores lexicos -------------------------------------------------------
+
+TEST(LexerTest, UnterminatedStringIsAnErrorAtTheOpeningQuote) {
+    const LexResult result = Lex("SELECT 'sin cerrar");
+    ASSERT_EQ(result.errors.size(), 1U);
+    EXPECT_EQ(result.errors[0].message, "Cadena sin cerrar");
+    EXPECT_EQ(result.errors[0].line, 1U);
+    EXPECT_EQ(result.errors[0].column, 8U);
+    // La cadena rota no se clasifica como literal valido.
+    EXPECT_EQ(Types(result), (std::vector<TokenType>{Type::kKeywordSelect, Type::kEndOfInput}));
+}
+
+TEST(LexerTest, UnterminatedStringOnALaterLineReportsWhereItStarted) {
+    const LexResult result = Lex("SELECT a\nFROM t\nWHERE n = 'Ana");
+    ASSERT_EQ(result.errors.size(), 1U);
+    EXPECT_EQ(result.errors[0].line, 3U);
+    EXPECT_EQ(result.errors[0].column, 11U);
+}
+
+TEST(LexerTest, StringEndingWithADoubledQuoteIsStillUnterminated) {
+    const LexResult result = Lex("'abc''");
+    ASSERT_EQ(result.errors.size(), 1U);
+    EXPECT_EQ(result.errors[0].message, "Cadena sin cerrar");
+}
+
+TEST(LexerTest, MalformedNumbersAreReportedAsOneError) {
+    for (const char* input : {"12abc", "3.", "1.2.3", "7x"}) {
+        const LexResult result = Lex(input);
+        ASSERT_EQ(result.errors.size(), 1U) << input;
+        EXPECT_NE(result.errors[0].message.find("Numero mal formado"), std::string::npos) << input;
+        EXPECT_EQ(result.errors[0].column, 1U) << input;
+        // Ninguna parte del numero roto aparece como token valido.
+        EXPECT_EQ(Types(result), (std::vector<TokenType>{Type::kEndOfInput})) << input;
+    }
+}
+
+TEST(LexerTest, LoneBangIsAnErrorButNotEqualIsFine) {
+    const LexResult bad = Lex("a ! b");
+    ASSERT_EQ(bad.errors.size(), 1U);
+    EXPECT_EQ(bad.errors[0].column, 3U);
+    EXPECT_TRUE(Lex("a != b").Ok());
+}
+
+TEST(LexerTest, ErrorsDoNotStopTheAnalysis) {
+    const LexResult result = Lex("SELECT 12abc, @ FROM 'x");
+    EXPECT_EQ(result.errors.size(), 3U);
+    // Lo valido que rodea a los errores se reconoce igualmente.
+    EXPECT_EQ(Types(result), (std::vector<TokenType>{Type::kKeywordSelect, Type::kComma,
+                                                     Type::kKeywordFrom, Type::kEndOfInput}));
+}
+
+TEST(LexerTest, ErrorsAreReportedInOrderOfPosition) {
+    const LexResult result = Lex("@ a\n$ 1x");
+    ASSERT_EQ(result.errors.size(), 3U);
+    EXPECT_EQ(result.errors[0].line, 1U);
+    EXPECT_EQ(result.errors[1].line, 2U);
+    EXPECT_EQ(result.errors[1].column, 1U);
+    EXPECT_EQ(result.errors[2].line, 2U);
+    EXPECT_EQ(result.errors[2].column, 3U);
+}
+
 }  // namespace
 }  // namespace minidb
