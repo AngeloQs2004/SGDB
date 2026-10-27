@@ -339,5 +339,98 @@ TEST(LexerTest, ErrorsAreReportedInOrderOfPosition) {
     EXPECT_EQ(result.errors[2].column, 3U);
 }
 
+// --- Escenarios del enunciado ----------------------------------------------
+// Un test por cada escenario de la seccion de pruebas del laboratorio.
+
+// Escenario 1: sentencia valida con SELECT, FROM y WHERE (Cuadro 1 del enunciado).
+TEST(LexerScenarios, ValidStatementWithSelectFromWhere) {
+    const LexResult result = Lex("SELECT nombre, edad\nFROM estudiantes\nWHERE edad >= 18;");
+
+    EXPECT_TRUE(result.Ok());
+    EXPECT_EQ(Types(result),
+              (std::vector<TokenType>{
+                  Type::kKeywordSelect, Type::kIdentifier, Type::kComma, Type::kIdentifier,
+                  Type::kKeywordFrom, Type::kIdentifier, Type::kKeywordWhere, Type::kIdentifier,
+                  Type::kGreaterEqual, Type::kIntegerLiteral, Type::kSemicolon,
+                  Type::kEndOfInput}));
+    EXPECT_EQ(Lexemes(result),
+              (std::vector<std::string>{"SELECT", "nombre", ",", "edad", "FROM", "estudiantes",
+                                        "WHERE", "edad", ">=", "18", ";", ""}));
+}
+
+// Escenario 2: >=, <=, <> y != se reconocen como tokens individuales.
+TEST(LexerScenarios, CompoundOperatorsAreIndividualTokens) {
+    const LexResult result = Lex("a>=1 b<=2 c<>3 d!=4");
+    std::vector<std::string> operators;
+    for (const Token& token : result.tokens) {
+        if (token.type != Type::kIdentifier && token.type != Type::kIntegerLiteral &&
+            token.type != Type::kEndOfInput) {
+            operators.push_back(token.lexeme);
+        }
+    }
+    EXPECT_EQ(operators, (std::vector<std::string>{">=", "<=", "<>", "!="}));
+    EXPECT_TRUE(result.Ok());
+}
+
+// Escenario 3: enteros, decimales y cadenas de texto.
+TEST(LexerScenarios, IntegerDecimalAndStringLiterals) {
+    const LexResult result = Lex("42 3.14 'texto'");
+    EXPECT_EQ(Types(result),
+              (std::vector<TokenType>{Type::kIntegerLiteral, Type::kDecimalLiteral,
+                                      Type::kStringLiteral, Type::kEndOfInput}));
+}
+
+// Escenario 4: palabras reservadas distintas de identificadores.
+TEST(LexerScenarios, ReservedWordsAreToldApartFromIdentifiers) {
+    const LexResult result = Lex("select selection from fromage where wherever and android or order");
+    const std::vector<TokenType> expected = {
+        Type::kKeywordSelect, Type::kIdentifier, Type::kKeywordFrom, Type::kIdentifier,
+        Type::kKeywordWhere,  Type::kIdentifier, Type::kKeywordAnd,  Type::kIdentifier,
+        Type::kKeywordOr,     Type::kIdentifier, Type::kEndOfInput};
+    EXPECT_EQ(Types(result), expected);
+}
+
+// Escenario 5: espacios, tabulaciones y saltos de linea.
+TEST(LexerScenarios, SpacesTabsAndNewlinesAreSkippedAndLinesAreCounted) {
+    const LexResult result = Lex("SELECT\ta,\n\tb\r\nFROM    t\n\n;");
+    EXPECT_TRUE(result.Ok());
+    EXPECT_EQ(Lexemes(result),
+              (std::vector<std::string>{"SELECT", "a", ",", "b", "FROM", "t", ";", ""}));
+    EXPECT_EQ(result.tokens[4].line, 3U);   // FROM
+    EXPECT_EQ(result.tokens[6].line, 5U);   // ;
+}
+
+// Escenario 6: caracteres no admitidos y cadenas sin cerrar.
+TEST(LexerScenarios, InvalidCharactersAndUnterminatedStringsAreReported) {
+    const LexResult result = Lex("SELECT a # FROM t WHERE n = 'Ana");
+
+    ASSERT_EQ(result.errors.size(), 2U);
+    EXPECT_NE(result.errors[0].message.find('#'), std::string::npos);
+    EXPECT_EQ(result.errors[0].column, 10U);
+    EXPECT_EQ(result.errors[1].message, "Cadena sin cerrar");
+    EXPECT_EQ(result.errors[1].column, 29U);
+    for (const Token& token : result.tokens) {
+        EXPECT_NE(token.lexeme, "#");
+        EXPECT_NE(token.type, Type::kStringLiteral);
+    }
+}
+
+// Escenario 7: entradas vacias, sentencias incompletas y tokens al final.
+TEST(LexerScenarios, EmptyIncompleteAndTrailingTokens) {
+    // Vacia: solo EOF.
+    EXPECT_EQ(Types(Lex("")), (std::vector<TokenType>{Type::kEndOfInput}));
+
+    // Incompleta: el lexer no valida la gramatica, solo clasifica lo que hay.
+    const LexResult incomplete = Lex("SELECT nombre FROM");
+    EXPECT_TRUE(incomplete.Ok());
+    EXPECT_EQ(Types(incomplete), (std::vector<TokenType>{Type::kKeywordSelect, Type::kIdentifier,
+                                                         Type::kKeywordFrom, Type::kEndOfInput}));
+
+    // Un token pegado al final de la entrada, sin espacio ni punto y coma.
+    EXPECT_EQ(Lex("edad >= 18").tokens[2].lexeme, "18");
+    EXPECT_EQ(Lex("tabla").tokens[0].lexeme, "tabla");
+    EXPECT_EQ(Lex("a >").tokens[1].type, Type::kGreater);
+}
+
 }  // namespace
 }  // namespace minidb
