@@ -30,6 +30,7 @@ solo para las pruebas.
 - [Evaluación de rendimiento](#evaluación-de-rendimiento)
 - [Archivos en disco](#archivos-en-disco)
 - [Limitaciones](#limitaciones)
+- [Fase 2 — Analizador léxico](#fase-2--analizador-léxico-sql)
 
 El detalle técnico completo —offsets, invariantes y diagramas— está en
 [ARCHITECTURE.md](ARCHITECTURE.md).
@@ -744,3 +745,81 @@ ctest --test-dir build -R BPlusTree --output-on-failure  # solo el B+ Tree (22 c
 Se usa el **grado mínimo `t`**: cada nodo no raíz tiene entre `t-1` y `2t-1` claves (un nodo interno, entre `t` y `2t` hijos) y se divide al llegar a `2t`.
 Por defecto `t = 16` (hasta 31 claves por nodo): da árboles de altura 3 con pocos miles de filas, lo que permite ver splits y crecimiento de altura en la demo.
 El límite físico es `t = 200` (`16 + 10·(2t-1) <= 4096` bytes); `BPlusTree::Create` rechaza grados mayores. Las pruebas usan `t = 2..8` para forzar splits frecuentes.
+
+## Fase 2 — Analizador léxico SQL
+
+Primera parte de la Fase 2: convierte el texto de una sentencia `SELECT` en una secuencia ordenada de tokens, cada uno con su tipo, su lexema y la línea y columna donde empieza. Detecta errores léxicos y los informa con su posición. No ejecuta la consulta ni comprueba que existan tablas o columnas: de eso se encarga el analizador sintáctico (siguiente etapa).
+
+El módulo es independiente del motor de almacenamiento: está en `include/minidb/lexer/` y `src/lexer/`, se compila como la biblioteca `minidb_lexer` y no usa `minidb_core`. La especificación completa de tokens y reglas está en [`docs/LEXER.md`](docs/LEXER.md).
+
+### Requisitos
+
+- Compilador C++20 (probado con GCC 16 en Linux)
+- CMake >= 3.20
+- GoogleTest (solo para las pruebas): `sudo apt install libgtest-dev` o `sudo pacman -S gtest`
+
+### Compilar
+
+```bash
+git checkout fase_2_advance
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j"$(nproc)"
+```
+
+### Ejecutar
+
+El programa `sql_lexer` lee la sentencia de un archivo, de la entrada estándar o de un texto dado con `-e`, e imprime una fila por token:
+
+```bash
+./build/sql_lexer -e "SELECT nombre, edad FROM estudiantes WHERE edad >= 18;"
+./build/sql_lexer consulta.sql
+echo "SELECT * FROM t" | ./build/sql_lexer
+./scripts/demo_lexer.sh        # los siete escenarios de validación
+```
+
+Código de salida: `0` sin errores léxicos, `1` con errores léxicos, `2` por uso incorrecto o error de lectura.
+
+```text
+ LINEA  COL  TIPO             LEXEMA
+-------------------------------------------------
+     1    1  KEYWORD_SELECT   SELECT
+     1    8  IDENTIFIER       nombre
+     1   14  COMMA            ,
+     ...
+     1   49  GREATER_EQUAL    >=
+     1   52  INTEGER_LITERAL  18
+     1   54  SEMICOLON        ;
+     1   55  EOF              <EOF>
+```
+
+### Pruebas
+
+```bash
+ctest --test-dir build --output-on-failure                  # toda la suite
+./build/lexer_test                                          # solo el analizador léxico (49 pruebas)
+./build/lexer_test --gtest_filter='LexerScenarios.*'        # los siete escenarios del enunciado
+```
+
+Las pruebas cubren: sentencia válida, operadores compuestos, literales, palabras reservadas contra identificadores, espacios y saltos de línea, errores léxicos y casos límite.
+
+### Tokens reconocidos
+
+| Lexema | Token |
+|---|---|
+| `SELECT` `FROM` `WHERE` `AND` `OR` (sin distinguir mayúsculas) | `KEYWORD_SELECT` `KEYWORD_FROM` `KEYWORD_WHERE` `KEYWORD_AND` `KEYWORD_OR` |
+| nombres de tablas y columnas | `IDENTIFIER` |
+| `18` | `INTEGER_LITERAL` |
+| `3.14` | `DECIMAL_LITERAL` |
+| `'texto'` | `STRING_LITERAL` |
+| `=` | `EQUAL` |
+| `<>` `!=` | `NOT_EQUAL` |
+| `<` `>` `<=` `>=` | `LESS` `GREATER` `LESS_EQUAL` `GREATER_EQUAL` |
+| `,` `;` `*` | `COMMA` `SEMICOLON` `ASTERISK` |
+| fin de la entrada | `EOF` |
+
+### Reglas léxicas en breve
+
+- Las palabras reservadas no distinguen mayúsculas; los identificadores sí conservan las que escribió el usuario.
+- Se toma siempre el lexema más largo posible: `>=` es un solo token.
+- Los espacios, tabulaciones y saltos de línea se ignoran. Línea y columna empiezan en 1.
+- Un carácter no admitido, una cadena sin cerrar o un número mal formado (`12abc`, `3.`) se informan como error con su posición y no se clasifican como token; el análisis continúa.
