@@ -432,5 +432,72 @@ TEST(LexerScenarios, EmptyIncompleteAndTrailingTokens) {
     EXPECT_EQ(Lex("a >").tokens[1].type, Type::kGreater);
 }
 
+// --- Casos limite ----------------------------------------------------------
+
+TEST(LexerEdgeCases, NulByteInTheMiddleIsAnErrorNotTheEndOfTheInput) {
+    const std::string input("a\0b", 3);
+    const LexResult result = Lexer(input).Tokenize();
+    ASSERT_EQ(result.errors.size(), 1U);
+    EXPECT_EQ(result.errors[0].column, 2U);
+    EXPECT_EQ(Types(result), (std::vector<TokenType>{Type::kIdentifier, Type::kIdentifier,
+                                                     Type::kEndOfInput}));
+}
+
+TEST(LexerEdgeCases, Utf8InsideAStringIsAcceptedAndCountedByCharacters) {
+    const LexResult result = Lex("'A\xC3\xB1o' x");  // 'Año' x
+    EXPECT_TRUE(result.Ok());
+    EXPECT_EQ(result.tokens[0].type, Type::kStringLiteral);
+    // 'Año' son 5 caracteres (7 columnas con espacio): x queda en la columna 7.
+    EXPECT_EQ(result.tokens[1].column, 7U);
+}
+
+TEST(LexerEdgeCases, VeryLongIdentifierAndLargeInputAreHandled) {
+    const std::string long_name(10000, 'a');
+    const LexResult one = Lex(long_name);
+    ASSERT_EQ(one.tokens.size(), 2U);
+    EXPECT_EQ(one.tokens[0].lexeme.size(), 10000U);
+
+    std::string big;
+    for (int i = 0; i < 5000; ++i) {
+        big += "SELECT a, 12 >= 3.5;\n";
+    }
+    const LexResult many = Lex(big);
+    EXPECT_TRUE(many.Ok());
+    EXPECT_EQ(many.tokens.size(), 5000U * 7U + 1U);
+    EXPECT_EQ(many.tokens.back().line, 5001U);
+}
+
+TEST(LexerEdgeCases, AnalysingTheSameInputTwiceGivesTheSameResult) {
+    Lexer lexer("SELECT a, @ FROM t;");
+    const LexResult first = lexer.Tokenize();
+    const LexResult second = Lexer("SELECT a, @ FROM t;").Tokenize();
+    EXPECT_EQ(first.tokens, second.tokens);
+    EXPECT_EQ(first.errors.size(), second.errors.size());
+}
+
+TEST(LexerEdgeCases, OnlyErrorsStillEndWithEof) {
+    const LexResult result = Lex("@ # $");
+    EXPECT_EQ(result.errors.size(), 3U);
+    EXPECT_EQ(Types(result), (std::vector<TokenType>{Type::kEndOfInput}));
+}
+
+TEST(LexerEdgeCases, DotAloneAndLeadingDotAreNotNumbers) {
+    for (const char* input : {".", ".5"}) {
+        const LexResult result = Lex(input);
+        EXPECT_FALSE(result.Ok()) << input;
+        for (const Token& token : result.tokens) {
+            EXPECT_NE(token.type, Type::kDecimalLiteral) << input;
+        }
+    }
+}
+
+TEST(LexerEdgeCases, NegativeSignIsNotAdmittedByTheLexer) {
+    // El signo menos no pertenece al subconjunto: un numero negativo lo
+    // resolvera el analizador sintactico.
+    const LexResult result = Lex("-5");
+    ASSERT_EQ(result.errors.size(), 1U);
+    EXPECT_EQ(Types(result), (std::vector<TokenType>{Type::kIntegerLiteral, Type::kEndOfInput}));
+}
+
 }  // namespace
 }  // namespace minidb
